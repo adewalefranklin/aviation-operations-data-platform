@@ -28,6 +28,4 @@ class Config:
                 "OPENSKY_TOKEN_URL must be set in the environment variables."
             )
         if not self.s3_raw_prefix:
-            raise ConfigError(
-                "S3_RAW_PREFIX must be set in the environment variables."
-            )
+            raise ConfigError("S3_RAW_PREFIX must be set in the environment variables.")
