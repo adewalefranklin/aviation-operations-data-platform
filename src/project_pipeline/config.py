@@ -40,5 +40,6 @@ class Config:
         if not self.aws_region:
             raise ConfigError("AWS_REGION must be set in the environment variables.")
         if not self.aws_bucket_name:
-            raise ConfigError("AWS_BUCKET_NAME must be set in the environment variables.")
-        
+            raise ConfigError(
+                "AWS_BUCKET_NAME must be set in the environment variables."
+            )

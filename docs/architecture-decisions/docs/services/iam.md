@@ -1,4 +1,4 @@
-# ADR-004: Use IAM Identity Policies for S3 Write Access
+# Use IAM Identity Policies for S3 Write Access
 
 ## Status
 

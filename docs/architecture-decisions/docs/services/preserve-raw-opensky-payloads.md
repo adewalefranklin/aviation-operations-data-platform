@@ -1,4 +1,4 @@
-# ADR-002: Preserve Raw OpenSky Payloads Without Modification
+# Preserve Raw OpenSky Payloads Without Modification
 
 ## Status
 

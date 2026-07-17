@@ -5,6 +5,7 @@ class PipelineError(Exception):
 class ConfigError(PipelineError):
     pass
 
+
 class AuthenticationError(PipelineError):
     pass
 
@@ -19,4 +20,3 @@ class TransformError(PipelineError):
 
 class LoadError(PipelineError):
     pass
-

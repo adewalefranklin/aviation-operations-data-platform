@@ -3,10 +3,10 @@ from datetime import datetime, timezone
 from src.project_pipeline.exceptions import TransformError
 from src.project_pipeline.logger import get_logger
 
-
 logger = get_logger(__name__)
 
 EXPECTED_STATE_FIELDS = 17
+
 
 class OpenSkyTransformer:
     """Performs light transformation of OpenSky aircraft state vectors."""
@@ -22,12 +22,9 @@ class OpenSkyTransformer:
         states = payload.get("states")
 
         if states is None:
-            raise TransformError(
-                "OpenSky payload does not contain a 'states' field."
-            )
+            raise TransformError("OpenSky payload does not contain a 'states' field.")
 
         ingestion_timestamp = datetime.now(timezone.utc).isoformat()
-
 
         transformed_states = []
 
@@ -86,4 +83,4 @@ class OpenSkyTransformer:
             len(transformed_states),
         )
 
-        return transformed_payload  
+        return transformed_payload

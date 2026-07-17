@@ -1,4 +1,4 @@
-# ADR-003: Partition raw OpenSky data by ingestion time
+# Partition raw OpenSky data by ingestion time
 
 ## Status
 

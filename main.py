@@ -3,7 +3,6 @@ from src.project_pipeline.exceptions import PipelineError
 from src.project_pipeline.logger import get_logger
 from src.project_pipeline.pipeline import OpenSkyPipeline
 
-
 logger = get_logger(__name__)
 
 
@@ -31,4 +30,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    

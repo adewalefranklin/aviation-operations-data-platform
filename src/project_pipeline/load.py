@@ -67,6 +67,4 @@ class S3JsonLoader:
                 error,
             )
 
-            raise LoadError(
-                "Failed to load raw OpenSky data to S3."
-            ) from error
+            raise LoadError("Failed to load raw OpenSky data to S3.") from error

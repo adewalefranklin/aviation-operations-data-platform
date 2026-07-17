@@ -1,4 +1,4 @@
-# ADR-001: Use Amazon S3 as the Data Lake
+# Amazon S3 as the Data Lake
 
 ## Status
 
