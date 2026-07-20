@@ -29,3 +29,10 @@ terraform.tfvars
 
 # Logs
 *.log
+
+# Airflow runtime files
+airflow/logs/
+airflow/config/
+airflow/.env
+airflow/airflow.cfg
+airflow/standalone_admin_password.txt
