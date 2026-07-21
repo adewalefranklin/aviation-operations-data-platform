@@ -4,41 +4,6 @@ An end-to-end cloud-native aviation data platform built on AWS that ingests live
 
 ---
 
-OpenSky Network API
-        │
-        ▼
-Python Ingestion Pipeline
-        │
-        ▼
-Amazon S3 Raw Landing Zone
-        │
-        ▼
-Apache Airflow DAG
-        │
-        ▼
-Validate Raw Data
-        │
-        ▼
-Create EMR Cluster
-        │
-        ▼
-Apache Spark
-        │
-        ▼
-Data Validation & Transformation
-        │
-        ▼
-Apache Iceberg
-        │
-        ▼
-AWS Glue Data Catalog
-        │
-        ▼
-Amazon Athena
-        │
-        ▼
-Analytics / BI
-
 # Project Overview
 
 This project demonstrates how a modern data engineering platform can ingest, process, catalogue, and manage aviation telemetry using a scalable ELT architecture.
@@ -57,38 +22,38 @@ The platform follows cloud data engineering best practices:
 # Architecture
 
 ```
-                       OpenSky Network API
-                                │
-                                ▼
-                  Python Ingestion Pipeline
-                                │
-                                ▼
-                     Amazon S3 (Raw JSON)
-                                │
-                                ▼
-                    Apache Airflow Orchestration
-                                │
-              ┌─────────────────┴─────────────────┐
-              ▼                                   ▼
-      Validate Raw Data                 Create EMR Cluster
+                   OpenSky Network API
+                           │
+                           ▼
+               Python Ingestion Pipeline
+                           │
+                           ▼
+                 Amazon S3 Raw Landing Zone
+                           │
+                           ▼
+                  Apache Airflow DAG
+                           │
+      ┌────────────────────┴────────────────────┐
+      ▼                                         ▼
+Validate Raw Data                     Create EMR Cluster
                                                 │
                                                 ▼
-                                     Apache Spark (EMR)
+                                         Apache Spark
                                                 │
                                                 ▼
-                                Data Validation & Transformation
+                                 Data Validation & Transform
                                                 │
                                                 ▼
-                                   Apache Iceberg Tables
+                                        Apache Iceberg
                                                 │
                                                 ▼
-                                 AWS Glue Data Catalog
+                                   AWS Glue Data Catalog
                                                 │
                                                 ▼
-                              Athena / Downstream Analytics
+                                        Amazon Athena
                                                 │
                                                 ▼
-                                  Terminate EMR Cluster
+                                      Analytics / BI
 ```
 
 ---
