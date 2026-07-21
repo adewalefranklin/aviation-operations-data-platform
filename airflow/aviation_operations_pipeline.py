@@ -20,7 +20,6 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.utils.trigger_rule import TriggerRule
 
-
 # AWS and project configuration
 
 AWS_REGION = "us-east-1"
@@ -29,13 +28,11 @@ S3_BUCKET = "aviation-operations-data-platform"
 RAW_PREFIX = "raw/opensky/states/"
 
 SPARK_SCRIPT = (
-    "s3://aviation-operations-data-platform/"
-    "scripts/emr/states_to_iceberg.py"
+    "s3://aviation-operations-data-platform/" "scripts/emr/states_to_iceberg.py"
 )
 
 REJECTED_PATH = (
-    "s3://aviation-operations-data-platform/"
-    "data-quality/rejected/opensky/states/"
+    "s3://aviation-operations-data-platform/" "data-quality/rejected/opensky/states/"
 )
 
 GLUE_DATABASE = "aviation_operations"
@@ -56,10 +53,7 @@ JOB_FLOW_OVERRIDES = {
             "Name": "Spark",
         },
     ],
-    "LogUri": (
-        "s3://aviation-operations-data-platform/"
-        "logs/emr/"
-    ),
+    "LogUri": ("s3://aviation-operations-data-platform/" "logs/emr/"),
     "Instances": {
         "InstanceGroups": [
             {
@@ -106,6 +100,7 @@ JOB_FLOW_OVERRIDES = {
 
 # Validation functions
 
+
 def validate_raw_s3_data() -> str:
     """
     Find and validate the latest raw OpenSky object.
@@ -121,9 +116,7 @@ def validate_raw_s3_data() -> str:
     )
 
     s3_client = s3_hook.get_conn()
-    paginator = s3_client.get_paginator(
-        "list_objects_v2"
-    )
+    paginator = s3_client.get_paginator("list_objects_v2")
 
     latest_object: dict[str, Any] | None = None
 
@@ -137,15 +130,13 @@ def validate_raw_s3_data() -> str:
         ):
             if (
                 latest_object is None
-                or current_object["LastModified"]
-                > latest_object["LastModified"]
+                or current_object["LastModified"] > latest_object["LastModified"]
             ):
                 latest_object = current_object
 
     if latest_object is None:
         raise RuntimeError(
-            "No raw OpenSky objects were found under "
-            f"s3://{S3_BUCKET}/{RAW_PREFIX}"
+            "No raw OpenSky objects were found under " f"s3://{S3_BUCKET}/{RAW_PREFIX}"
         )
 
     object_key = latest_object["Key"]
@@ -153,8 +144,7 @@ def validate_raw_s3_data() -> str:
 
     if object_size <= 0:
         raise RuntimeError(
-            "Raw OpenSky object is empty: "
-            f"s3://{S3_BUCKET}/{object_key}"
+            "Raw OpenSky object is empty: " f"s3://{S3_BUCKET}/{object_key}"
         )
 
     response = s3_client.get_object(
@@ -165,16 +155,13 @@ def validate_raw_s3_data() -> str:
     raw_body = response["Body"].read()
 
     try:
-        payload = json.loads(
-            raw_body.decode("utf-8")
-        )
+        payload = json.loads(raw_body.decode("utf-8"))
     except (
         UnicodeDecodeError,
         json.JSONDecodeError,
     ) as exc:
         raise RuntimeError(
-            "Raw OpenSky object is not valid JSON: "
-            f"s3://{S3_BUCKET}/{object_key}"
+            "Raw OpenSky object is not valid JSON: " f"s3://{S3_BUCKET}/{object_key}"
         ) from exc
 
     states = payload.get("states")
@@ -225,10 +212,7 @@ def validate_iceberg_table() -> None:
     returned_table_name = table.get("Name")
 
     if returned_table_name != ICEBERG_TABLE:
-        raise RuntimeError(
-            "Unexpected Glue table returned: "
-            f"{returned_table_name}"
-        )
+        raise RuntimeError("Unexpected Glue table returned: " f"{returned_table_name}")
 
     table_parameters = table.get(
         "Parameters",
@@ -268,10 +252,7 @@ SPARK_STEPS = [
                 ),
                 SPARK_SCRIPT,
                 "--raw-path",
-                (
-                    "{{ ti.xcom_pull("
-                    "task_ids='validate_raw_s3_data') }}"
-                ),
+                ("{{ ti.xcom_pull(" "task_ids='validate_raw_s3_data') }}"),
                 "--rejected-path",
                 REJECTED_PATH,
             ],
@@ -295,8 +276,7 @@ default_args = {
 with DAG(
     dag_id="aviation_operations_pipeline",
     description=(
-        "Ingest OpenSky data and process it into a "
-        "Glue-backed Apache Iceberg table"
+        "Ingest OpenSky data and process it into a " "Glue-backed Apache Iceberg table"
     ),
     start_date=datetime(2026, 7, 20),
     schedule=None,
@@ -366,10 +346,7 @@ with DAG(
     wait_for_iceberg_step = EmrStepSensor(
         task_id="wait_for_iceberg_step",
         job_flow_id=create_emr_cluster.output,
-        step_id=(
-            "{{ ti.xcom_pull("
-            "task_ids='submit_iceberg_step')[0] }}"
-        ),
+        step_id=("{{ ti.xcom_pull(" "task_ids='submit_iceberg_step')[0] }}"),
         target_states=[
             "COMPLETED",
         ],

@@ -1,20 +1,13 @@
 from pyspark.sql import SparkSession
 
-
-ICEBERG_TABLE_NAME = (
-    "glue_catalog."
-    "aviation_operations."
-    "iceberg_test"
-)
+ICEBERG_TABLE_NAME = "glue_catalog." "aviation_operations." "iceberg_test"
 
 
 spark = (
-    SparkSession.builder
-    .appName("IcebergTableTest")
+    SparkSession.builder.appName("IcebergTableTest")
     .config(
         "spark.sql.extensions",
-        "org.apache.iceberg.spark.extensions."
-        "IcebergSparkSessionExtensions",
+        "org.apache.iceberg.spark.extensions." "IcebergSparkSessionExtensions",
     )
     .config(
         "spark.sql.catalog.glue_catalog",
@@ -43,9 +36,7 @@ spark = (
 try:
     print("Spark session created successfully")
 
-    spark.sql(
-        "SHOW NAMESPACES IN glue_catalog"
-    ).show(truncate=False)
+    spark.sql("SHOW NAMESPACES IN glue_catalog").show(truncate=False)
 
     test_df = spark.createDataFrame(
         [
@@ -77,14 +68,9 @@ try:
         .create()
     )
 
-    print(
-        f"Iceberg table created successfully: "
-        f"{ICEBERG_TABLE_NAME}"
-    )
+    print(f"Iceberg table created successfully: " f"{ICEBERG_TABLE_NAME}")
 
-    spark.table(
-        ICEBERG_TABLE_NAME
-    ).show(truncate=False)
+    spark.table(ICEBERG_TABLE_NAME).show(truncate=False)
 
 finally:
     spark.stop()

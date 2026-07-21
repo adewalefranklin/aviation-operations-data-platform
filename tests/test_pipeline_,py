@@ -1,0 +1,147 @@
+from unittest.mock import Mock, call, patch
+
+import pytest
+
+from src.project_pipeline.exceptions import ExtractError, LoadError
+from src.project_pipeline.pipeline import OpenSkyPipeline
+
+
+@pytest.fixture
+def mock_config():
+    """Provide a configuration object for pipeline construction."""
+
+    return Mock()
+
+
+@pytest.fixture
+def sample_payload():
+    """Provide a representative raw OpenSky payload."""
+
+    return {
+        "time": 1750000000,
+        "states": [
+            [
+                "abc123",
+                "TEST123",
+                "Germany",
+            ]
+        ],
+    }
+
+
+def test_pipeline_run_success(mock_config, sample_payload):
+    """Extract raw data, load it to S3, and return the resulting key."""
+
+    expected_s3_key = (
+        "raw/opensky/states/"
+        "year=2026/month=07/day=21/hour=10/"
+        "20260721T103045Z.json"
+    )
+
+    with patch(
+        "src.project_pipeline.pipeline.OpenSkyExtractor"
+    ) as mock_extractor_class, patch(
+        "src.project_pipeline.pipeline.S3JsonLoader"
+    ) as mock_loader_class:
+        mock_extractor = mock_extractor_class.return_value
+        mock_loader = mock_loader_class.return_value
+
+        mock_extractor.extract_states.return_value = sample_payload
+        mock_loader.load_to_s3.return_value = expected_s3_key
+
+        pipeline = OpenSkyPipeline(mock_config)
+
+        result = pipeline.run()
+
+    assert result == expected_s3_key
+
+    mock_extractor_class.assert_called_once_with(mock_config)
+    mock_loader_class.assert_called_once_with(mock_config)
+
+    mock_extractor.extract_states.assert_called_once_with()
+    mock_loader.load_to_s3.assert_called_once_with(sample_payload)
+
+
+def test_pipeline_runs_extraction_before_loading(mock_config, sample_payload):
+    """Ensure extraction completes before the loader is invoked."""
+
+    execution_order = Mock()
+
+    with patch(
+        "src.project_pipeline.pipeline.OpenSkyExtractor"
+    ) as mock_extractor_class, patch(
+        "src.project_pipeline.pipeline.S3JsonLoader"
+    ) as mock_loader_class:
+        mock_extractor = mock_extractor_class.return_value
+        mock_loader = mock_loader_class.return_value
+
+        mock_extractor.extract_states.side_effect = (
+            lambda: execution_order.extract() or sample_payload
+        )
+
+        mock_loader.load_to_s3.side_effect = (
+            lambda data: execution_order.load(data) or "test-key.json"
+        )
+
+        pipeline = OpenSkyPipeline(mock_config)
+
+        pipeline.run()
+
+    assert execution_order.mock_calls == [
+        call.extract(),
+        call.load(sample_payload),
+    ]
+
+
+def test_pipeline_reraises_extract_error(mock_config):
+    """Re-raise extraction errors instead of hiding pipeline failures."""
+
+    extract_error = ExtractError("OpenSky extraction failed.")
+
+    with patch(
+        "src.project_pipeline.pipeline.OpenSkyExtractor"
+    ) as mock_extractor_class, patch(
+        "src.project_pipeline.pipeline.S3JsonLoader"
+    ) as mock_loader_class:
+        mock_extractor = mock_extractor_class.return_value
+        mock_loader = mock_loader_class.return_value
+
+        mock_extractor.extract_states.side_effect = extract_error
+
+        pipeline = OpenSkyPipeline(mock_config)
+
+        with pytest.raises(
+            ExtractError,
+            match="OpenSky extraction failed",
+        ):
+            pipeline.run()
+
+    mock_loader.load_to_s3.assert_not_called()
+
+
+def test_pipeline_reraises_load_error(mock_config, sample_payload):
+    """Re-raise loading errors after extraction succeeds."""
+
+    load_error = LoadError("S3 loading failed.")
+
+    with patch(
+        "src.project_pipeline.pipeline.OpenSkyExtractor"
+    ) as mock_extractor_class, patch(
+        "src.project_pipeline.pipeline.S3JsonLoader"
+    ) as mock_loader_class:
+        mock_extractor = mock_extractor_class.return_value
+        mock_loader = mock_loader_class.return_value
+
+        mock_extractor.extract_states.return_value = sample_payload
+        mock_loader.load_to_s3.side_effect = load_error
+
+        pipeline = OpenSkyPipeline(mock_config)
+
+        with pytest.raises(
+            LoadError,
+            match="S3 loading failed",
+        ):
+            pipeline.run()
+
+    mock_extractor.extract_states.assert_called_once_with()
+    mock_loader.load_to_s3.assert_called_once_with(sample_payload)

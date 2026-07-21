@@ -7,33 +7,21 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, IntegerType
 
-
 # Configuration
 
-DEFAULT_RAW_PATH = (
-    "s3://aviation-operations-data-platform/"
-    "raw/opensky/states/"
-)
+DEFAULT_RAW_PATH = "s3://aviation-operations-data-platform/" "raw/opensky/states/"
 
 DEFAULT_REJECTED_PATH = (
-    "s3://aviation-operations-data-platform/"
-    "data-quality/rejected/opensky/states/"
+    "s3://aviation-operations-data-platform/" "data-quality/rejected/opensky/states/"
 )
 
-ICEBERG_WAREHOUSE_PATH = (
-    "s3://aviation-operations-data-platform/"
-    "iceberg/"
-)
+ICEBERG_WAREHOUSE_PATH = "s3://aviation-operations-data-platform/" "iceberg/"
 
 ICEBERG_CATALOG = "glue_catalog"
 ICEBERG_DATABASE = "aviation_operations"
 ICEBERG_TABLE = "opensky_flight_states_iceberg"
 
-ICEBERG_TABLE_NAME = (
-    f"{ICEBERG_CATALOG}."
-    f"{ICEBERG_DATABASE}."
-    f"{ICEBERG_TABLE}"
-)
+ICEBERG_TABLE_NAME = f"{ICEBERG_CATALOG}." f"{ICEBERG_DATABASE}." f"{ICEBERG_TABLE}"
 
 INCOMING_VIEW_NAME = "incoming_opensky_states"
 
@@ -50,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 # Runtime arguments
 
+
 def parse_arguments() -> argparse.Namespace:
     """
     Parse optional EMR step arguments.
@@ -61,18 +50,13 @@ def parse_arguments() -> argparse.Namespace:
     """
 
     parser = argparse.ArgumentParser(
-        description=(
-            "Transform OpenSky raw JSON into an Apache Iceberg table."
-        )
+        description=("Transform OpenSky raw JSON into an Apache Iceberg table.")
     )
 
     parser.add_argument(
         "--raw-path",
         default=DEFAULT_RAW_PATH,
-        help=(
-            "S3 raw prefix, partition, or individual JSON object "
-            "to process."
-        ),
+        help=("S3 raw prefix, partition, or individual JSON object " "to process."),
     )
 
     parser.add_argument(
@@ -86,25 +70,20 @@ def parse_arguments() -> argparse.Namespace:
 
 # Spark session
 
+
 def create_spark_session() -> SparkSession:
     """
     Create a Spark session configured for Apache Iceberg and
     the AWS Glue Data Catalog.
     """
 
-    logger.info(
-        "Creating Spark session with Apache Iceberg support"
-    )
+    logger.info("Creating Spark session with Apache Iceberg support")
 
     spark = (
-        SparkSession.builder
-        .appName("OpenSkyStatesToIceberg")
+        SparkSession.builder.appName("OpenSkyStatesToIceberg")
         .config(
             "spark.sql.extensions",
-            (
-                "org.apache.iceberg.spark.extensions."
-                "IcebergSparkSessionExtensions"
-            ),
+            ("org.apache.iceberg.spark.extensions." "IcebergSparkSessionExtensions"),
         )
         .config(
             f"spark.sql.catalog.{ICEBERG_CATALOG}",
@@ -129,9 +108,7 @@ def create_spark_session() -> SparkSession:
         .getOrCreate()
     )
 
-    logger.info(
-        "Spark session created successfully"
-    )
+    logger.info("Spark session created successfully")
 
     return spark
 
@@ -153,32 +130,23 @@ def verify_iceberg_catalog(
         ICEBERG_DATABASE,
     )
 
-    namespaces_df = spark.sql(
-        f"SHOW NAMESPACES IN {ICEBERG_CATALOG}"
-    )
+    namespaces_df = spark.sql(f"SHOW NAMESPACES IN {ICEBERG_CATALOG}")
 
     namespace_exists = (
-        namespaces_df
-        .filter(
-            F.col("namespace") == ICEBERG_DATABASE
-        )
-        .limit(1)
-        .count()
+        namespaces_df.filter(F.col("namespace") == ICEBERG_DATABASE).limit(1).count()
         > 0
     )
 
     if not namespace_exists:
         raise RuntimeError(
-            "Required Glue database was not found: "
-            f"{ICEBERG_DATABASE}"
+            "Required Glue database was not found: " f"{ICEBERG_DATABASE}"
         )
 
-    logger.info(
-        "Iceberg catalog verified successfully"
-    )
+    logger.info("Iceberg catalog verified successfully")
 
 
 # Read raw OpenSky data
+
 
 def read_raw_data(
     spark: SparkSession,
@@ -199,20 +167,15 @@ def read_raw_data(
         raw_path,
     )
 
-    raw_df = (
-        spark.read
-        .option("multiLine", "true")
-        .json(raw_path)
-    )
+    raw_df = spark.read.option("multiLine", "true").json(raw_path)
 
-    logger.info(
-        "Raw OpenSky data loaded successfully"
-    )
+    logger.info("Raw OpenSky data loaded successfully")
 
     return raw_df
 
 
 # Explode OpenSky states
+
 
 def explode_states(
     raw_df: DataFrame,
@@ -224,29 +187,18 @@ def explode_states(
     null state arrays to reach the rejection logic.
     """
 
-    logger.info(
-        "Exploding the OpenSky states array"
-    )
+    logger.info("Exploding the OpenSky states array")
 
     exploded_df = raw_df.select(
-        F.col("time")
-        .cast("long")
-        .alias("source_response_time"),
-
-        F.input_file_name()
-        .alias("source_file"),
-
-        F.posexplode_outer(
-            F.col("states")
-        ).alias(
+        F.col("time").cast("long").alias("source_response_time"),
+        F.input_file_name().alias("source_file"),
+        F.posexplode_outer(F.col("states")).alias(
             "state_position",
             "state",
         ),
     )
 
-    logger.info(
-        "OpenSky states array exploded successfully"
-    )
+    logger.info("OpenSky states array exploded successfully")
 
     return exploded_df
 
@@ -265,28 +217,19 @@ def separate_valid_and_rejected(
     A valid OpenSky state vector must contain exactly 17 fields.
     """
 
-    logger.info(
-        "Validating OpenSky state-vector lengths"
-    )
+    logger.info("Validating OpenSky state-vector lengths")
 
     validated_df = exploded_df.withColumn(
         "field_count",
-        F.size(
-            F.col("state")
-        ),
+        F.size(F.col("state")),
     )
 
     valid_df = validated_df.filter(
-        F.col("state").isNotNull()
-        & (F.col("field_count") == 17)
+        F.col("state").isNotNull() & (F.col("field_count") == 17)
     )
 
     rejected_df = (
-        validated_df
-        .filter(
-            F.col("state").isNull()
-            | (F.col("field_count") != 17)
-        )
+        validated_df.filter(F.col("state").isNull() | (F.col("field_count") != 17))
         .withColumn(
             "rejection_reason",
             F.when(
@@ -294,10 +237,7 @@ def separate_valid_and_rejected(
                 F.lit("STATE_ARRAY_IS_NULL"),
             ).otherwise(
                 F.concat(
-                    F.lit(
-                        "INVALID_FIELD_COUNT_"
-                        "EXPECTED_17_ACTUAL_"
-                    ),
+                    F.lit("INVALID_FIELD_COUNT_" "EXPECTED_17_ACTUAL_"),
                     F.coalesce(
                         F.col("field_count").cast("string"),
                         F.lit("NULL"),
@@ -311,25 +251,21 @@ def separate_valid_and_rejected(
         )
         .withColumn(
             "rejection_timestamp",
-            F.lit(processing_timestamp)
-            .cast("timestamp"),
+            F.lit(processing_timestamp).cast("timestamp"),
         )
         .withColumn(
             "ingestion_date",
-            F.to_date(
-                F.col("rejection_timestamp")
-            ),
+            F.to_date(F.col("rejection_timestamp")),
         )
     )
 
-    logger.info(
-        "OpenSky state-vector validation completed"
-    )
+    logger.info("OpenSky state-vector validation completed")
 
     return valid_df, rejected_df
 
 
 # Transform valid records
+
 
 def transform_valid_records(
     valid_df: DataFrame,
@@ -349,98 +285,39 @@ def transform_valid_records(
     payload hash because they change for every pipeline execution.
     """
 
-    logger.info(
-        "Mapping OpenSky state positions to analytical columns"
-    )
+    logger.info("Mapping OpenSky state positions to analytical columns")
 
     transformed_df = valid_df.select(
-        F.col("state")[0]
-        .cast("string")
-        .alias("icao24"),
-
-        F.trim(
-            F.col("state")[1].cast("string")
-        ).alias("callsign"),
-
-        F.col("state")[2]
-        .cast("string")
-        .alias("origin_country"),
-
-        F.col("state")[3]
-        .cast("long")
-        .alias("time_position"),
-
-        F.col("state")[4]
-        .cast("long")
-        .alias("last_contact"),
-
-        F.col("state")[5]
-        .cast("double")
-        .alias("longitude"),
-
-        F.col("state")[6]
-        .cast("double")
-        .alias("latitude"),
-
-        F.col("state")[7]
-        .cast("double")
-        .alias("barometric_altitude_m"),
-
-        F.col("state")[8]
-        .cast("boolean")
-        .alias("on_ground"),
-
-        F.col("state")[9]
-        .cast("double")
-        .alias("velocity_m_s"),
-
-        F.col("state")[10]
-        .cast("double")
-        .alias("true_track_degrees"),
-
-        F.col("state")[11]
-        .cast("double")
-        .alias("vertical_rate_m_s"),
-
+        F.col("state")[0].cast("string").alias("icao24"),
+        F.trim(F.col("state")[1].cast("string")).alias("callsign"),
+        F.col("state")[2].cast("string").alias("origin_country"),
+        F.col("state")[3].cast("long").alias("time_position"),
+        F.col("state")[4].cast("long").alias("last_contact"),
+        F.col("state")[5].cast("double").alias("longitude"),
+        F.col("state")[6].cast("double").alias("latitude"),
+        F.col("state")[7].cast("double").alias("barometric_altitude_m"),
+        F.col("state")[8].cast("boolean").alias("on_ground"),
+        F.col("state")[9].cast("double").alias("velocity_m_s"),
+        F.col("state")[10].cast("double").alias("true_track_degrees"),
+        F.col("state")[11].cast("double").alias("vertical_rate_m_s"),
         F.from_json(
             F.col("state")[12].cast("string"),
             ArrayType(IntegerType()),
         ).alias("sensors"),
-
-        F.col("state")[13]
-        .cast("double")
-        .alias("geometric_altitude_m"),
-
-        F.col("state")[14]
-        .cast("string")
-        .alias("squawk"),
-
-        F.col("state")[15]
-        .cast("boolean")
-        .alias("special_purpose_indicator"),
-
-        F.col("state")[16]
-        .cast("integer")
-        .alias("position_source"),
-
+        F.col("state")[13].cast("double").alias("geometric_altitude_m"),
+        F.col("state")[14].cast("string").alias("squawk"),
+        F.col("state")[15].cast("boolean").alias("special_purpose_indicator"),
+        F.col("state")[16].cast("integer").alias("position_source"),
         F.col("source_response_time"),
         F.col("source_file"),
         F.col("state_position"),
-
-        F.lit("opensky")
-        .alias("source"),
-
-        F.lit(processing_run_id)
-        .alias("processing_run_id"),
-
-        F.lit(processing_timestamp)
-        .cast("timestamp")
-        .alias("ingestion_timestamp"),
+        F.lit("opensky").alias("source"),
+        F.lit(processing_run_id).alias("processing_run_id"),
+        F.lit(processing_timestamp).cast("timestamp").alias("ingestion_timestamp"),
     )
 
     transformed_df = (
-        transformed_df
-        .withColumn(
+        transformed_df.withColumn(
             "event_timestamp_epoch",
             F.coalesce(
                 F.col("time_position"),
@@ -450,17 +327,11 @@ def transform_valid_records(
         )
         .withColumn(
             "event_timestamp",
-            F.to_timestamp(
-                F.from_unixtime(
-                    F.col("event_timestamp_epoch")
-                )
-            ),
+            F.to_timestamp(F.from_unixtime(F.col("event_timestamp_epoch"))),
         )
         .withColumn(
             "event_date",
-            F.to_date(
-                F.col("event_timestamp")
-            ),
+            F.to_date(F.col("event_timestamp")),
         )
         .withColumn(
             "velocity_kmh",
@@ -472,16 +343,14 @@ def transform_valid_records(
         .withColumn(
             "barometric_altitude_ft",
             F.round(
-                F.col("barometric_altitude_m")
-                * F.lit(3.28084),
+                F.col("barometric_altitude_m") * F.lit(3.28084),
                 2,
             ),
         )
         .withColumn(
             "geometric_altitude_ft",
             F.round(
-                F.col("geometric_altitude_m")
-                * F.lit(3.28084),
+                F.col("geometric_altitude_m") * F.lit(3.28084),
                 2,
             ),
         )
@@ -499,15 +368,11 @@ def transform_valid_records(
                         F.lit("NULL"),
                     ),
                     F.coalesce(
-                        F.col(
-                            "source_response_time"
-                        ).cast("string"),
+                        F.col("source_response_time").cast("string"),
                         F.lit("NULL"),
                     ),
                     F.coalesce(
-                        F.col(
-                            "state_position"
-                        ).cast("string"),
+                        F.col("state_position").cast("string"),
                         F.lit("NULL"),
                     ),
                 ),
@@ -562,14 +427,13 @@ def transform_valid_records(
         ),
     )
 
-    logger.info(
-        "Valid OpenSky records transformed successfully"
-    )
+    logger.info("Valid OpenSky records transformed successfully")
 
     return transformed_df
 
 
 # Deduplicate and materialize merge source
+
 
 def prepare_merge_source(
     processed_df: DataFrame,
@@ -584,30 +448,21 @@ def prepare_merge_source(
     Iceberg requires the MERGE source to be deterministic.
     """
 
-    logger.info(
-        "Deduplicating current batch by record_key"
-    )
+    logger.info("Deduplicating current batch by record_key")
 
-    deduplicated_df = processed_df.dropDuplicates(
-        ["record_key"]
-    )
+    deduplicated_df = processed_df.dropDuplicates(["record_key"])
 
-    logger.info(
-        "Materializing deterministic Iceberg MERGE source"
-    )
+    logger.info("Materializing deterministic Iceberg MERGE source")
 
-    materialized_df = deduplicated_df.localCheckpoint(
-        eager=True
-    )
+    materialized_df = deduplicated_df.localCheckpoint(eager=True)
 
-    logger.info(
-        "Current batch deduplicated and materialized successfully"
-    )
+    logger.info("Current batch deduplicated and materialized successfully")
 
     return materialized_df
 
 
 # Iceberg table existence
+
 
 def iceberg_table_exists(
     spark: SparkSession,
@@ -621,19 +476,10 @@ def iceberg_table_exists(
         ICEBERG_TABLE_NAME,
     )
 
-    tables_df = spark.sql(
-        f"SHOW TABLES IN "
-        f"{ICEBERG_CATALOG}.{ICEBERG_DATABASE}"
-    )
+    tables_df = spark.sql(f"SHOW TABLES IN " f"{ICEBERG_CATALOG}.{ICEBERG_DATABASE}")
 
     table_exists = (
-        tables_df
-        .filter(
-            F.col("tableName") == ICEBERG_TABLE
-        )
-        .limit(1)
-        .count()
-        > 0
+        tables_df.filter(F.col("tableName") == ICEBERG_TABLE).limit(1).count() > 0
     )
 
     logger.info(
@@ -645,6 +491,7 @@ def iceberg_table_exists(
 
 
 # Create Iceberg table
+
 
 def create_iceberg_table(
     processed_df: DataFrame,
@@ -661,13 +508,9 @@ def create_iceberg_table(
     )
 
     (
-        processed_df.writeTo(
-            ICEBERG_TABLE_NAME
-        )
+        processed_df.writeTo(ICEBERG_TABLE_NAME)
         .using("iceberg")
-        .partitionedBy(
-            F.days("event_timestamp")
-        )
+        .partitionedBy(F.days("event_timestamp"))
         .tableProperty(
             "format-version",
             "2",
@@ -691,6 +534,7 @@ def create_iceberg_table(
 
 # Merge into existing Iceberg table
 
+
 def merge_into_iceberg_table(
     spark: SparkSession,
     processed_df: DataFrame,
@@ -713,9 +557,7 @@ def merge_into_iceberg_table(
         ICEBERG_TABLE_NAME,
     )
 
-    processed_df.createOrReplaceTempView(
-        INCOMING_VIEW_NAME
-    )
+    processed_df.createOrReplaceTempView(INCOMING_VIEW_NAME)
 
     merge_sql = f"""
         MERGE INTO {ICEBERG_TABLE_NAME} AS target
@@ -860,12 +702,11 @@ def merge_into_iceberg_table(
 
     spark.sql(merge_sql)
 
-    logger.info(
-        "Iceberg MERGE completed successfully"
-    )
+    logger.info("Iceberg MERGE completed successfully")
 
 
 # Write Iceberg table
+
 
 def write_iceberg_table(
     spark: SparkSession,
@@ -888,6 +729,7 @@ def write_iceberg_table(
 
 # Write rejected records
 
+
 def write_rejected_data(
     rejected_df: DataFrame,
     rejected_path: str,
@@ -896,17 +738,12 @@ def write_rejected_data(
     Append rejected records as partitioned Parquet audit events.
     """
 
-    logger.info(
-        "Checking for rejected OpenSky records"
-    )
+    logger.info("Checking for rejected OpenSky records")
 
     rejected_count = rejected_df.count()
 
     if rejected_count == 0:
-        logger.info(
-            "No rejected records found; "
-            "skipping rejected-data write"
-        )
+        logger.info("No rejected records found; " "skipping rejected-data write")
 
         return 0
 
@@ -917,20 +754,18 @@ def write_rejected_data(
     )
 
     (
-        rejected_df.write
-        .mode("append")
+        rejected_df.write.mode("append")
         .partitionBy("ingestion_date")
         .parquet(rejected_path)
     )
 
-    logger.info(
-        "Rejected records written successfully"
-    )
+    logger.info("Rejected records written successfully")
 
     return rejected_count
 
 
 # Pipeline execution
+
 
 def main() -> None:
     """
@@ -945,18 +780,12 @@ def main() -> None:
 
     args = parse_arguments()
 
-    processing_run_id = str(
-        uuid.uuid4()
-    )
+    processing_run_id = str(uuid.uuid4())
 
-    processing_timestamp = (
-        datetime.now(timezone.utc)
-        .replace(tzinfo=None)
-    )
+    processing_timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
 
     logger.info(
-        "Starting OpenSky Iceberg pipeline; "
-        "run_id=%s raw_path=%s",
+        "Starting OpenSky Iceberg pipeline; " "run_id=%s raw_path=%s",
         processing_run_id,
         args.raw_path,
     )
@@ -966,46 +795,34 @@ def main() -> None:
     processed_df: DataFrame | None = None
 
     try:
-        logger.info(
-            "Pipeline stage: verify Iceberg catalog"
-        )
+        logger.info("Pipeline stage: verify Iceberg catalog")
 
         verify_iceberg_catalog(
             spark=spark,
         )
 
-        logger.info(
-            "Pipeline stage: read raw OpenSky data"
-        )
+        logger.info("Pipeline stage: read raw OpenSky data")
 
         raw_df = read_raw_data(
             spark=spark,
             raw_path=args.raw_path,
         )
 
-        logger.info(
-            "Pipeline stage: explode state vectors"
-        )
+        logger.info("Pipeline stage: explode state vectors")
 
         exploded_df = explode_states(
             raw_df=raw_df,
         )
 
-        logger.info(
-            "Pipeline stage: validate state vectors"
+        logger.info("Pipeline stage: validate state vectors")
+
+        valid_df, rejected_df = separate_valid_and_rejected(
+            exploded_df=exploded_df,
+            processing_run_id=processing_run_id,
+            processing_timestamp=processing_timestamp,
         )
 
-        valid_df, rejected_df = (
-            separate_valid_and_rejected(
-                exploded_df=exploded_df,
-                processing_run_id=processing_run_id,
-                processing_timestamp=processing_timestamp,
-            )
-        )
-
-        logger.info(
-            "Pipeline stage: transform valid records"
-        )
+        logger.info("Pipeline stage: transform valid records")
 
         transformed_df = transform_valid_records(
             valid_df=valid_df,
@@ -1013,9 +830,7 @@ def main() -> None:
             processing_timestamp=processing_timestamp,
         )
 
-        logger.info(
-            "Pipeline stage: prepare deterministic merge source"
-        )
+        logger.info("Pipeline stage: prepare deterministic merge source")
 
         processed_df = prepare_merge_source(
             processed_df=transformed_df,
@@ -1025,8 +840,7 @@ def main() -> None:
 
         if valid_record_count == 0:
             raise RuntimeError(
-                "No valid OpenSky records were available "
-                "for the Iceberg table"
+                "No valid OpenSky records were available " "for the Iceberg table"
             )
 
         logger.info(
@@ -1034,18 +848,14 @@ def main() -> None:
             valid_record_count,
         )
 
-        logger.info(
-            "Pipeline stage: write Iceberg table"
-        )
+        logger.info("Pipeline stage: write Iceberg table")
 
         write_iceberg_table(
             spark=spark,
             processed_df=processed_df,
         )
 
-        logger.info(
-            "Pipeline stage: write rejected records"
-        )
+        logger.info("Pipeline stage: write rejected records")
 
         rejected_record_count = write_rejected_data(
             rejected_df=rejected_df,
@@ -1062,8 +872,7 @@ def main() -> None:
 
     except Exception:
         logger.exception(
-            "OpenSky Iceberg pipeline failed; "
-            "run_id=%s",
+            "OpenSky Iceberg pipeline failed; " "run_id=%s",
             processing_run_id,
         )
 
@@ -1071,9 +880,7 @@ def main() -> None:
 
     finally:
         if processed_df is not None:
-            processed_df.unpersist(
-                blocking=False
-            )
+            processed_df.unpersist(blocking=False)
 
         spark.stop()
 
