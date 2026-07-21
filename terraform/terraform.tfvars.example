@@ -1,0 +1,5 @@
+aws_region         = "us-east-1"
+project_name       = "aviation-operations-data-platform"
+environment        = "dev"
+raw_bucket_name    = "aviation-operations-data-platform"
+glue_database_name = "aviation_operations"

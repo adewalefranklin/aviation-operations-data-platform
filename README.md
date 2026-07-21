@@ -1,65 +1,26 @@
 # Aviation Operations Data Platform
 
-An end-to-end cloud-native aviation data platform built on AWS that ingests live aircraft state data from the OpenSky Network API, stores immutable raw data in Amazon S3, transforms it using Apache Spark on Amazon EMR, stores curated datasets in Apache Iceberg with the AWS Glue Data Catalog, and orchestrates the entire workflow using Apache Airflow.
+An end-to-end cloud-native data engineering platform built on AWS that ingests live aircraft state data from the OpenSky Network API, stores immutable raw data in Amazon S3, transforms it using Apache Spark on Amazon EMR, writes curated datasets as Apache Iceberg tables, catalogs metadata with the AWS Glue Data Catalog, queries data using Amazon Athena, and orchestrates the entire workflow with Apache Airflow.
 
 ---
 
 # Project Overview
 
-This project demonstrates how a modern data engineering platform can ingest, process, catalogue, and manage aviation telemetry using a scalable ELT architecture.
+This project demonstrates how to design and implement a modern cloud-native data platform capable of ingesting, processing, cataloging, and serving aviation telemetry data using a scalable ELT architecture.
 
-The platform follows cloud data engineering best practices:
+The platform applies production-oriented data engineering practices, including:
 
-- Preserve immutable raw data
-- Perform transformations with distributed Spark processing
-- Store analytical datasets in Apache Iceberg
-- Register metadata using AWS Glue Data Catalog
-- Orchestrate workflows with Apache Airflow
-- Automatically provision and terminate compute resources to minimise cloud cost
-
----
-
-# Pipeline Architecture
-
-```
-                                      OpenSky Network API
-                            │
-                            ▼
-                Python Ingestion Pipeline
-                            │
-                            ▼
-                 Amazon S3 Raw Landing Zone
-
-
-===========================================================
-             Apache Airflow Workflow Orchestration
-===========================================================
-
-                            │
-                            ▼
-                  Validate Raw S3 Data
-                            │
-                            ▼
-                  Create EMR Cluster
-                            │
-                            ▼
-                     Apache Spark on Amazon EMR
-                            │
-                            ▼
-             Data Validation & Transformation
-                            │
-                            ▼
-                     Apache Iceberg Table
-                            │
-                            ▼
-                  AWS Glue Data Catalog
-                            │
-                            ▼
-                      Amazon Athena
-                            │
-                            ▼
-                     Analytics / BI
-```
+- OAuth2-secured API ingestion
+- Immutable raw data storage in Amazon S3
+- Distributed data processing with Apache Spark on Amazon EMR
+- Data quality validation before curation
+- Apache Iceberg for ACID-compliant analytical tables
+- Metadata management with the AWS Glue Data Catalog
+- Serverless SQL analytics with Amazon Athena
+- Workflow orchestration using Apache Airflow
+- Infrastructure provisioning with Terraform
+- Least-privilege IAM security
+- Automated provisioning and termination of compute resources to optimise cloud costs
 
 ---
 
@@ -68,23 +29,26 @@ The platform follows cloud data engineering best practices:
 | Category | Technologies |
 |-----------|-------------|
 | Programming | Python 3 |
-| Cloud Platform | AWS |
+| Cloud Platform | Amazon Web Services (AWS) |
+| Infrastructure as Code | Terraform |
 | Data Lake | Amazon S3 |
 | Distributed Processing | Amazon EMR |
 | Processing Engine | Apache Spark |
 | Table Format | Apache Iceberg |
-| Metadata | AWS Glue Data Catalog |
-| Orchestration | Apache Airflow |
+| Metadata Management | AWS Glue Data Catalog |
+| Workflow Orchestration | Apache Airflow |
 | Query Engine | Amazon Athena |
-| Authentication | OAuth2 |
+| Authentication | OAuth2 Client Credentials |
+| Monitoring | Amazon CloudWatch |
 | Version Control | Git & GitHub |
+| CI/CD | GitHub Actions |
 | Containerisation | Docker |
 
 ---
 
 # Project Structure
 
-```
+```text
 aviation-operations-data-platform/
 │
 ├── airflow/
@@ -92,6 +56,7 @@ aviation-operations-data-platform/
 │
 ├── docs/
 │   ├── architecture-decisions/
+│   ├── architecture/
 │   └── screenshots/
 │
 ├── scripts/
@@ -106,11 +71,83 @@ aviation-operations-data-platform/
 │   ├── pipeline/
 │   └── config/
 │
+├── terraform/
+│   ├── data.tf
+│   ├── iam.tf
+│   ├── outputs.tf
+│   ├── provider.tf
+│   ├── variables.tf
+│   ├── versions.tf
+│   └── terraform.tfvars.example
+│
 ├── tests/
+│
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 │
 ├── Dockerfile
 ├── requirements.txt
+├── requirements-dev.txt
 └── README.md
+```
+
+---
+
+# Pipeline Architecture
+
+```text
+                         Terraform
+               Infrastructure as Code
+          IAM Roles • Policies • Glue • EMR
+                         │
+                         ▼
+
+                 OpenSky Network API
+                         │
+                         ▼
+              Python Ingestion Pipeline
+          OAuth2 Authentication • Extract • Load
+                         │
+                         ▼
+           Amazon S3 Raw Landing Zone
+        Raw JSON partitioned by year/month/day/hour
+
+
+===========================================================
+          Apache Airflow Workflow Orchestration
+     Scheduling • Dependencies • Retries • Monitoring
+===========================================================
+
+                         │
+                         ▼
+               Validate Raw S3 Data
+                         │
+                         ▼
+                Create EMR Cluster
+                         │
+                         ▼
+           Apache Spark on Amazon EMR
+                         │
+                         ▼
+        Clean • Validate • Type • Transform
+                         │
+                         ▼
+          Amazon S3 Processed Data Zone
+                    Parquet Files
+                         │
+                         ▼
+               Apache Iceberg Table
+          Snapshots • Schema • Table Metadata
+                         │
+                         ▼
+              AWS Glue Data Catalog
+                         │
+                         ▼
+                  Amazon Athena
+                         │
+                         ▼
+             SQL Analytics / BI Tools
 ```
 
 ---
@@ -119,23 +156,24 @@ aviation-operations-data-platform/
 
 ## Step 1 — Authentication
 
-The platform authenticates against the OpenSky Network API using OAuth2 Client Credentials.
+The platform authenticates against the OpenSky Network API using the OAuth2 Client Credentials flow.
 
 ---
 
 ## Step 2 — Data Extraction
 
-Aircraft state vectors are extracted from the OpenSky API.
+Aircraft state vectors are extracted from the OpenSky Network API.
 
 Each API response contains:
 
 - Response timestamp
 - Aircraft state vectors
 - Position
-- Speed
+- Velocity
 - Altitude
 - Heading
 - Flight identifiers
+- Additional aircraft metadata
 
 ---
 
@@ -145,7 +183,7 @@ The original API response is stored unchanged inside Amazon S3.
 
 Example:
 
-```
+```text
 raw/
 └── opensky/
     └── states/
@@ -155,7 +193,7 @@ raw/
                     └── hour=07/
 ```
 
-The platform follows an ELT architecture by preserving the original source data.
+The platform follows an ELT architecture by preserving the original source data before any transformation.
 
 ---
 
@@ -163,9 +201,7 @@ The platform follows an ELT architecture by preserving the original source data.
 
 Apache Airflow orchestrates the complete workflow.
 
-Pipeline:
-
-```
+```text
 Start
 
 ↓
@@ -211,32 +247,33 @@ End
 
 Amazon EMR executes Apache Spark to:
 
-- Read raw JSON
+- Read raw JSON from Amazon S3
 - Explode aircraft state arrays
 - Validate records
 - Reject malformed records
 - Transform positional arrays into analytical columns
 - Generate business keys
 - Calculate payload hashes
-- Prepare analytical datasets
+- Produce analytics-ready datasets
 
 ---
 
-## Step 6 — Data Quality
+## Step 6 — Data Quality Validation
 
 The platform validates:
 
 - State vector length
 - Missing values
 - Invalid aircraft records
+- Schema consistency
 
-Rejected records are written to a dedicated S3 location for auditing.
+Rejected records are written to a dedicated Amazon S3 location for auditing and troubleshooting.
 
 ---
 
 ## Step 7 — Apache Iceberg
 
-Spark writes the curated dataset into Apache Iceberg.
+Apache Spark writes the curated dataset into Apache Iceberg.
 
 The platform supports:
 
@@ -248,17 +285,39 @@ The platform supports:
 
 ---
 
-## Step 8 — Glue Catalog
+## Step 8 — AWS Glue Data Catalog
 
-The Iceberg table is automatically registered inside the AWS Glue Data Catalog.
+The Iceberg table is automatically registered in the AWS Glue Data Catalog.
 
-This allows downstream services such as Athena to discover the dataset without additional configuration.
+This enables downstream services such as Amazon Athena to discover and query the dataset without additional configuration.
 
 ---
 
 ## Step 9 — Query Layer
 
-Amazon Athena can query the Iceberg tables directly without moving data into a warehouse.
+Amazon Athena queries the Apache Iceberg tables directly from Amazon S3 without requiring data movement into a traditional data warehouse.
+
+---
+
+## Step 10 — Infrastructure Management
+
+Terraform provisions and manages the AWS infrastructure used by the platform.
+
+Managed infrastructure includes:
+
+- EMR IAM Role
+- EMR Instance Profile
+- EMR Data Access Policy
+- Imported AWS Glue Database
+- Existing Amazon S3 Data Lake reference
+
+The project demonstrates:
+
+- Infrastructure as Code
+- Resource import
+- Data sources
+- Idempotent deployments
+- Least-privilege IAM design
 
 ---
 
@@ -267,10 +326,11 @@ Amazon Athena can query the Iceberg tables directly without moving data into a w
 ## Python
 
 - Object-Oriented Design
+- Modular architecture
 - Logging
 - Exception handling
 - Configuration management
-- Environment variables
+- Environment variable management
 
 ---
 
@@ -278,9 +338,10 @@ Amazon Athena can query the Iceberg tables directly without moving data into a w
 
 - Amazon S3
 - Amazon EMR
-- AWS Glue
+- AWS Glue Data Catalog
 - Amazon Athena
-- IAM
+- AWS IAM
+- Amazon CloudWatch
 
 ---
 
@@ -290,66 +351,90 @@ Amazon Athena can query the Iceberg tables directly without moving data into a w
 - Distributed Processing
 - Apache Spark
 - Apache Iceberg
-- Data Validation
+- Data Quality Validation
 - Idempotent Processing
+- Partitioned Data Lake Design
+
+---
+
+## Infrastructure as Code
+
+- Terraform
+- Imported Infrastructure
+- Data Sources
+- IAM Provisioning
+- Least-Privilege Security
+- Idempotent Infrastructure Deployment
 
 ---
 
 ## Workflow Orchestration
 
 - Apache Airflow DAGs
-- EMR lifecycle automation
-- Pipeline validation
-- Automatic cluster termination
+- EMR Lifecycle Automation
+- Pipeline Validation
+- Automatic Cluster Termination
+
+---
+
+## CI/CD
+
+- GitHub Actions
+- Automated Formatting Checks
+- Automated Unit Testing
+- Continuous Integration Pipeline
 
 ---
 
 # Screenshots
 
-## Airflow DAG
+## End-to-End Workflow
 
-```
-docs/screenshots/sample_airflow_dag_run.png
-```
+![End-to-End Airflow Orchestration](docs/screenshots/end-to-end_airflow_orchestration_sample.png)
 
 ---
 
-## End-to-End Successful Orchestration
+## Apache Iceberg Table
 
-```
-docs/screenshots/end-to-end_airflow_orchestration_sample.png
-```
+![Apache Iceberg Table](docs/screenshots/iceberg_table_sample_query.png)
 
 ---
 
-## Iceberg Table
+## Amazon Athena Query
 
-```
-docs/screenshots/iceberg_table_sample_query.png
-```
+![Athena Query](docs/screenshots/athena_sample_query_result.png)
 
 ---
 
-## Athena Query
+---
 
-```
-docs/screenshots/athena_sample_query_result.png
-```
+## Airflow Dags Overview
+
+![Airflow Dags Overview](docs/screenshots/airflow_dags_overview.png)
 
 ---
+
+## Github Actions Overview
+
+![Github Actions Overview](docs/screenshots/github_actions.png)
+
+---
+
 
 # Key Features
 
 - OAuth2 API Authentication
 - ELT Data Pipeline
 - Immutable Raw Data Storage
-- Distributed Spark Processing
+- Distributed Apache Spark Processing
 - Apache Iceberg Data Lake
 - AWS Glue Data Catalog Integration
 - Data Quality Validation
 - Idempotent MERGE Processing
-- Apache Airflow Orchestration
-- Automatic EMR Cluster Lifecycle Management
+- Apache Airflow Workflow Orchestration
+- Automated EMR Cluster Lifecycle Management
+- Infrastructure as Code with Terraform
+- GitHub Actions Continuous Integration
 
 ---
 
@@ -357,22 +442,23 @@ docs/screenshots/athena_sample_query_result.png
 
 This project demonstrates practical implementation of:
 
-- Cloud-native data engineering
-- Distributed data processing
-- Modern data lake architecture
-- Workflow orchestration
-- Infrastructure cost optimisation
-- Apache Iceberg implementation
-- Metadata management with AWS Glue
-- Production-style pipeline design
+- Cloud-native Data Engineering
+- Infrastructure as Code with Terraform
+- Distributed Data Processing
+- Modern Data Lake Architecture
+- Workflow Orchestration
+- Infrastructure Cost Optimisation
+- Apache Iceberg Implementation
+- Metadata Management with AWS Glue
+- IAM Least-Privilege Design
+- Production-ready Pipeline Design
 
 ---
 
 # Future Enhancements
 
-- Infrastructure provisioning using Terraform
-- CI/CD with GitHub Actions
-- Automated unit and integration testing
-- Data observability and monitoring
+- Deploy Airflow using Amazon MWAA
 - Incremental partition optimisation
-- Production deployment using Amazon MWAA
+- Automated infrastructure deployment pipeline
+- End-to-end monitoring dashboards
+- Production-grade alerting with CloudWatch and SNS
