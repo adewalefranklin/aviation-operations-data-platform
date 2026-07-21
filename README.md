@@ -19,41 +19,46 @@ The platform follows cloud data engineering best practices:
 
 ---
 
-# Architecture
+# Pipeline Architecture
 
 ```
-                   OpenSky Network API
-                           │
-                           ▼
-               Python Ingestion Pipeline
-                           │
-                           ▼
+                                      OpenSky Network API
+                            │
+                            ▼
+                Python Ingestion Pipeline
+                            │
+                            ▼
                  Amazon S3 Raw Landing Zone
-                           │
-                           ▼
-                  Apache Airflow DAG
-                           │
-      ┌────────────────────┴────────────────────┐
-      ▼                                         ▼
-Validate Raw Data                     Create EMR Cluster
-                                                │
-                                                ▼
-                                         Apache Spark
-                                                │
-                                                ▼
-                                 Data Validation & Transform
-                                                │
-                                                ▼
-                                        Apache Iceberg
-                                                │
-                                                ▼
-                                   AWS Glue Data Catalog
-                                                │
-                                                ▼
-                                        Amazon Athena
-                                                │
-                                                ▼
-                                      Analytics / BI
+
+
+===========================================================
+             Apache Airflow Workflow Orchestration
+===========================================================
+
+                            │
+                            ▼
+                  Validate Raw S3 Data
+                            │
+                            ▼
+                  Create EMR Cluster
+                            │
+                            ▼
+                     Apache Spark (EMR)
+                            │
+                            ▼
+             Data Validation & Transformation
+                            │
+                            ▼
+                     Apache Iceberg Table
+                            │
+                            ▼
+                  AWS Glue Data Catalog
+                            │
+                            ▼
+                      Amazon Athena
+                            │
+                            ▼
+                     Analytics / BI
 ```
 
 ---
