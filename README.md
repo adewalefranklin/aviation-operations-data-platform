@@ -43,7 +43,7 @@ The platform follows cloud data engineering best practices:
                   Create EMR Cluster
                             │
                             ▼
-                     Apache Spark (EMR)
+                     Apache Spark on Amazon EMR
                             │
                             ▼
              Data Validation & Transformation
