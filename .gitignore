@@ -36,3 +36,6 @@ airflow/config/
 airflow/.env
 airflow/airflow.cfg
 airflow/standalone_admin_password.txt
+
+# Downloaded compressed logs
+*.gz
