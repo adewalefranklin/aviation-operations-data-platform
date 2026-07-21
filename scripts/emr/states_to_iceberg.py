@@ -1,8 +1,8 @@
 import argparse
 import logging
 import uuid
+from datetime import datetime, timezone
 
-from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, IntegerType
@@ -50,16 +50,14 @@ logger = logging.getLogger(__name__)
 
 # Runtime arguments
 
-
 def parse_arguments() -> argparse.Namespace:
     """
     Parse optional EMR step arguments.
 
     Without arguments, the job processes the complete raw prefix.
 
-    For incremental processing, pass a specific raw partition:
-
-    --raw-path s3://bucket/raw/opensky/states/year=2026/month=07/day=20/hour=06/
+    For incremental processing, pass a specific raw object or
+    ingestion partition using --raw-path.
     """
 
     parser = argparse.ArgumentParser(
@@ -72,7 +70,7 @@ def parse_arguments() -> argparse.Namespace:
         "--raw-path",
         default=DEFAULT_RAW_PATH,
         help=(
-            "S3 raw prefix or a specific ingestion partition "
+            "S3 raw prefix, partition, or individual JSON object "
             "to process."
         ),
     )
@@ -88,17 +86,10 @@ def parse_arguments() -> argparse.Namespace:
 
 # Spark session
 
-
 def create_spark_session() -> SparkSession:
     """
-    Create a Spark session configured for Apache Iceberg.
-
-    The AWS Glue Data Catalog stores the logical table definition.
-    Iceberg data files, manifests and metadata files are stored in S3.
-
-    The EMR step must be submitted with:
-
-    --conf spark.jars=/usr/share/aws/iceberg/lib/iceberg-spark3-runtime.jar
+    Create a Spark session configured for Apache Iceberg and
+    the AWS Glue Data Catalog.
     """
 
     logger.info(
@@ -110,8 +101,10 @@ def create_spark_session() -> SparkSession:
         .appName("OpenSkyStatesToIceberg")
         .config(
             "spark.sql.extensions",
-            "org.apache.iceberg.spark.extensions."
-            "IcebergSparkSessionExtensions",
+            (
+                "org.apache.iceberg.spark.extensions."
+                "IcebergSparkSessionExtensions"
+            ),
         )
         .config(
             f"spark.sql.catalog.{ICEBERG_CATALOG}",
@@ -187,7 +180,6 @@ def verify_iceberg_catalog(
 
 # Read raw OpenSky data
 
-
 def read_raw_data(
     spark: SparkSession,
     raw_path: str,
@@ -195,10 +187,11 @@ def read_raw_data(
     """
     Read multiline OpenSky JSON payloads from Amazon S3.
 
-    raw_path may reference either:
+    raw_path may reference:
 
-    1. The entire raw dataset.
-    2. A specific year/month/day/hour partition.
+    1. The complete raw dataset.
+    2. A year/month/day/hour partition.
+    3. One specific JSON ingestion object.
     """
 
     logger.info(
@@ -219,17 +212,16 @@ def read_raw_data(
     return raw_df
 
 
-# Explode OpenSky states array
-
+# Explode OpenSky states
 
 def explode_states(
     raw_df: DataFrame,
 ) -> DataFrame:
     """
-    Convert each OpenSky state vector into one Spark row.
+    Convert every OpenSky state vector into an individual Spark row.
 
-    posexplode_outer preserves the original array position and
-    allows null arrays to reach the rejection logic.
+    posexplode_outer preserves the original array position and allows
+    null state arrays to reach the rejection logic.
     """
 
     logger.info(
@@ -265,14 +257,12 @@ def explode_states(
 def separate_valid_and_rejected(
     exploded_df: DataFrame,
     processing_run_id: str,
+    processing_timestamp: datetime,
 ) -> tuple[DataFrame, DataFrame]:
     """
     Separate valid OpenSky records from malformed records.
 
     A valid OpenSky state vector must contain exactly 17 fields.
-
-    Rejected records include processing_run_id so each failure can
-    be traced to the pipeline execution that produced it.
     """
 
     logger.info(
@@ -281,7 +271,9 @@ def separate_valid_and_rejected(
 
     validated_df = exploded_df.withColumn(
         "field_count",
-        F.size(F.col("state")),
+        F.size(
+            F.col("state")
+        ),
     )
 
     valid_df = validated_df.filter(
@@ -319,7 +311,8 @@ def separate_valid_and_rejected(
         )
         .withColumn(
             "rejection_timestamp",
-            F.current_timestamp(),
+            F.lit(processing_timestamp)
+            .cast("timestamp"),
         )
         .withColumn(
             "ingestion_date",
@@ -338,23 +331,22 @@ def separate_valid_and_rejected(
 
 # Transform valid records
 
-
 def transform_valid_records(
     valid_df: DataFrame,
     processing_run_id: str,
+    processing_timestamp: datetime,
 ) -> DataFrame:
     """
     Map OpenSky's 17 positional values into named analytical columns.
 
     record_key:
-        Stable record identifier used for Iceberg MERGE matching.
+        Stable identifier used for Iceberg MERGE matching.
 
     payload_hash:
-        Hash of meaningful source and derived values. It detects
-        whether a matching record has genuinely changed.
+        Hash used to determine whether a matching record has changed.
 
-    ingestion_timestamp and processing_run_id are excluded from the
-    payload hash because they change on every execution.
+    processing_run_id and ingestion_timestamp are excluded from the
+    payload hash because they change for every pipeline execution.
     """
 
     logger.info(
@@ -362,93 +354,75 @@ def transform_valid_records(
     )
 
     transformed_df = valid_df.select(
-        # Position 0
         F.col("state")[0]
         .cast("string")
         .alias("icao24"),
 
-        # Position 1
         F.trim(
             F.col("state")[1].cast("string")
         ).alias("callsign"),
 
-        # Position 2
         F.col("state")[2]
         .cast("string")
         .alias("origin_country"),
 
-        # Position 3
         F.col("state")[3]
         .cast("long")
         .alias("time_position"),
 
-        # Position 4
         F.col("state")[4]
         .cast("long")
         .alias("last_contact"),
 
-        # Position 5
         F.col("state")[5]
         .cast("double")
         .alias("longitude"),
 
-        # Position 6
         F.col("state")[6]
         .cast("double")
         .alias("latitude"),
 
-        # Position 7
         F.col("state")[7]
         .cast("double")
         .alias("barometric_altitude_m"),
 
-        # Position 8
         F.col("state")[8]
         .cast("boolean")
         .alias("on_ground"),
 
-        # Position 9
         F.col("state")[9]
         .cast("double")
         .alias("velocity_m_s"),
 
-        # Position 10
         F.col("state")[10]
         .cast("double")
         .alias("true_track_degrees"),
 
-        # Position 11
         F.col("state")[11]
         .cast("double")
         .alias("vertical_rate_m_s"),
 
-        # Position 12
         F.from_json(
             F.col("state")[12].cast("string"),
             ArrayType(IntegerType()),
         ).alias("sensors"),
 
-        # Position 13
         F.col("state")[13]
         .cast("double")
         .alias("geometric_altitude_m"),
 
-        # Position 14
         F.col("state")[14]
         .cast("string")
         .alias("squawk"),
 
-        # Position 15
         F.col("state")[15]
         .cast("boolean")
         .alias("special_purpose_indicator"),
 
-        # Position 16
         F.col("state")[16]
         .cast("integer")
         .alias("position_source"),
 
-        # Source lineage
         F.col("source_response_time"),
         F.col("source_file"),
         F.col("state_position"),
@@ -456,11 +430,11 @@ def transform_valid_records(
         F.lit("opensky")
         .alias("source"),
 
-        # Pipeline audit metadata
         F.lit(processing_run_id)
         .alias("processing_run_id"),
 
-        F.current_timestamp()
+        F.lit(processing_timestamp)
+        .cast("timestamp")
         .alias("ingestion_timestamp"),
     )
 
@@ -595,17 +569,19 @@ def transform_valid_records(
     return transformed_df
 
 
-# Deduplicate current batch
+# Deduplicate and materialize merge source
 
-
-def deduplicate_processed_records(
+def prepare_merge_source(
     processed_df: DataFrame,
 ) -> DataFrame:
     """
-    Remove duplicate records from the current processing batch.
+    Deduplicate the current batch and materialize the result.
 
-    Iceberg MERGE requires at most one source row for each target
-    record_key.
+    Materializing with localCheckpoint cuts the transformation lineage
+    before Iceberg MERGE analysis. This prevents expressions such as
+    input_file_name from remaining in the MERGE source logical plan.
+
+    Iceberg requires the MERGE source to be deterministic.
     """
 
     logger.info(
@@ -617,20 +593,27 @@ def deduplicate_processed_records(
     )
 
     logger.info(
-        "Current batch deduplicated successfully"
+        "Materializing deterministic Iceberg MERGE source"
     )
 
-    return deduplicated_df
+    materialized_df = deduplicated_df.localCheckpoint(
+        eager=True
+    )
+
+    logger.info(
+        "Current batch deduplicated and materialized successfully"
+    )
+
+    return materialized_df
 
 
-# Iceberg table existence check
-
+# Iceberg table existence
 
 def iceberg_table_exists(
     spark: SparkSession,
 ) -> bool:
     """
-    Check the Glue-backed Iceberg catalog for the target table.
+    Check whether the Glue-backed Iceberg table already exists.
     """
 
     logger.info(
@@ -663,16 +646,13 @@ def iceberg_table_exists(
 
 # Create Iceberg table
 
-
 def create_iceberg_table(
     processed_df: DataFrame,
 ) -> None:
     """
     Create the Iceberg version 2 table during the first run.
 
-    days(event_timestamp) is a hidden Iceberg partition transform.
-    Queries filter event_timestamp normally without manually
-    referencing an S3 partition folder.
+    days(event_timestamp) is an Iceberg hidden partition transform.
     """
 
     logger.info(
@@ -711,13 +691,12 @@ def create_iceberg_table(
 
 # Merge into existing Iceberg table
 
-
 def merge_into_iceberg_table(
     spark: SparkSession,
     processed_df: DataFrame,
 ) -> None:
     """
-    Merge the current batch into the Iceberg table.
+    Merge the current deterministic batch into the Iceberg table.
 
     Matching key and identical payload:
         No action.
@@ -888,13 +867,12 @@ def merge_into_iceberg_table(
 
 # Write Iceberg table
 
-
 def write_iceberg_table(
     spark: SparkSession,
     processed_df: DataFrame,
 ) -> None:
     """
-    Create the table on the first run and use MERGE thereafter.
+    Create the table on the first run and use MERGE on later runs.
     """
 
     if iceberg_table_exists(spark):
@@ -910,16 +888,12 @@ def write_iceberg_table(
 
 # Write rejected records
 
-
 def write_rejected_data(
     rejected_df: DataFrame,
     rejected_path: str,
 ) -> int:
     """
-    Append rejected records as Parquet audit events.
-
-    Rejected records retain processing_run_id because repeated
-    failures should remain traceable to their individual executions.
+    Append rejected records as partitioned Parquet audit events.
     """
 
     logger.info(
@@ -933,6 +907,7 @@ def write_rejected_data(
             "No rejected records found; "
             "skipping rejected-data write"
         )
+
         return 0
 
     logger.info(
@@ -957,22 +932,26 @@ def write_rejected_data(
 
 # Pipeline execution
 
-
 def main() -> None:
     """
     Execute the OpenSky raw-to-Iceberg processing pipeline.
 
-    The target Iceberg table is idempotent:
+    The target table is idempotent:
 
-    - identical reruns do not insert duplicate records;
-    - corrected matching records are updated;
-    - new records are inserted.
+    - identical reruns do not insert duplicates;
+    - changed matching records are updated;
+    - previously unseen records are inserted.
     """
 
     args = parse_arguments()
 
     processing_run_id = str(
         uuid.uuid4()
+    )
+
+    processing_timestamp = (
+        datetime.now(timezone.utc)
+        .replace(tzinfo=None)
     )
 
     logger.info(
@@ -987,8 +966,16 @@ def main() -> None:
     processed_df: DataFrame | None = None
 
     try:
+        logger.info(
+            "Pipeline stage: verify Iceberg catalog"
+        )
+
         verify_iceberg_catalog(
             spark=spark,
+        )
+
+        logger.info(
+            "Pipeline stage: read raw OpenSky data"
         )
 
         raw_df = read_raw_data(
@@ -996,34 +983,45 @@ def main() -> None:
             raw_path=args.raw_path,
         )
 
+        logger.info(
+            "Pipeline stage: explode state vectors"
+        )
+
         exploded_df = explode_states(
             raw_df=raw_df,
+        )
+
+        logger.info(
+            "Pipeline stage: validate state vectors"
         )
 
         valid_df, rejected_df = (
             separate_valid_and_rejected(
                 exploded_df=exploded_df,
                 processing_run_id=processing_run_id,
+                processing_timestamp=processing_timestamp,
             )
         )
 
-        processed_df = transform_valid_records(
+        logger.info(
+            "Pipeline stage: transform valid records"
+        )
+
+        transformed_df = transform_valid_records(
             valid_df=valid_df,
             processing_run_id=processing_run_id,
+            processing_timestamp=processing_timestamp,
         )
 
-        processed_df = (
-            deduplicate_processed_records(
-                processed_df=processed_df,
-            )
-            .persist(
-                StorageLevel.MEMORY_AND_DISK
-            )
+        logger.info(
+            "Pipeline stage: prepare deterministic merge source"
         )
 
-        valid_record_count = (
-            processed_df.count()
+        processed_df = prepare_merge_source(
+            processed_df=transformed_df,
         )
+
+        valid_record_count = processed_df.count()
 
         if valid_record_count == 0:
             raise RuntimeError(
@@ -1032,9 +1030,12 @@ def main() -> None:
             )
 
         logger.info(
-            "Prepared %s unique valid records "
-            "for Iceberg",
+            "Prepared %s unique valid records for Iceberg",
             valid_record_count,
+        )
+
+        logger.info(
+            "Pipeline stage: write Iceberg table"
         )
 
         write_iceberg_table(
@@ -1042,17 +1043,18 @@ def main() -> None:
             processed_df=processed_df,
         )
 
-        rejected_record_count = (
-            write_rejected_data(
-                rejected_df=rejected_df,
-                rejected_path=args.rejected_path,
-            )
+        logger.info(
+            "Pipeline stage: write rejected records"
+        )
+
+        rejected_record_count = write_rejected_data(
+            rejected_df=rejected_df,
+            rejected_path=args.rejected_path,
         )
 
         logger.info(
-            "OpenSky Iceberg pipeline completed "
-            "successfully; run_id=%s "
-            "valid_records=%s rejected_records=%s",
+            "OpenSky Iceberg pipeline completed successfully; "
+            "run_id=%s valid_records=%s rejected_records=%s",
             processing_run_id,
             valid_record_count,
             rejected_record_count,
@@ -1064,11 +1066,14 @@ def main() -> None:
             "run_id=%s",
             processing_run_id,
         )
+
         raise
 
     finally:
         if processed_df is not None:
-            processed_df.unpersist()
+            processed_df.unpersist(
+                blocking=False
+            )
 
         spark.stop()
 
