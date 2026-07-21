@@ -4,6 +4,40 @@ An end-to-end cloud-native aviation data platform built on AWS that ingests live
 
 ---
 
+                   OpenSky Network API
+                           │
+                           ▼
+               Python Ingestion Pipeline
+                           │
+                           ▼
+                 Amazon S3 Raw Landing Zone
+                           │
+                           ▼
+                  Apache Airflow DAG
+                           │
+      ┌────────────────────┴────────────────────┐
+      ▼                                         ▼
+Validate Raw Data                     Create EMR Cluster
+                                                │
+                                                ▼
+                                         Apache Spark
+                                                │
+                                                ▼
+                                 Data Validation & Transform
+                                                │
+                                                ▼
+                                        Apache Iceberg
+                                                │
+                                                ▼
+                                   AWS Glue Data Catalog
+                                                │
+                                                ▼
+                                        Amazon Athena
+                                                │
+                                                ▼
+                                      Analytics / BI
+
+
 # Project Overview
 
 This project demonstrates how a modern data engineering platform can ingest, process, catalogue, and manage aviation telemetry using a scalable ELT architecture.
